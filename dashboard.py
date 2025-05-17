@@ -1,65 +1,57 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib.font_manager as fm
-import os
+import matplotlib
 
-# ==== ✅ 日本語フォントの設定（OSに応じて） ====
+# 📌 日本語フォント指定（Streamlit Cloud で文字化け防止）
+matplotlib.rcParams['font.family'] = 'IPAGothic'
 
-# Windows or IPAexGothic font (多くの環境で使える)
-jp_font = None
+# タイトル
+st.title("💰 自己資金ダッシュボード（万円単位）")
 
-# 検索候補
-for font_name in ["IPAexGothic", "Meiryo", "Yu Gothic", "Noto Sans CJK JP"]:
-    if font_name in [f.name for f in fm.fontManager.ttflist]:
-        jp_font = font_name
-        break
+# ファイルアップロード
+uploaded_file = st.file_uploader("💼 銀行・証券口座のCSVファイルをアップロードしてください", type=["csv"])
 
-# フォントが見つかった場合は設定
-if jp_font:
-    plt.rcParams["font.family"] = jp_font
-else:
-    st.warning("⚠️ 日本語フォントが見つかりませんでした。文字化けする可能性があります。")
-
-# ==== ✅ Streamlit UI ====
-
-st.set_page_config(page_title="自己資金ダッシュボード", layout="centered")
-st.title("💰 自己資金ダッシュボード")
-
-# CSVアップロード
-uploaded_file = st.file_uploader("📄 残高CSVファイルをアップロードしてください", type="csv")
-
-if uploaded_file:
-    # Shift_JIS → UTF-8順で読み込み
+if uploaded_file is not None:
     try:
-        df = pd.read_csv(uploaded_file, encoding="shift_jis")
-    except UnicodeDecodeError:
-        df = pd.read_csv(uploaded_file, encoding="utf-8-sig")
+        df = pd.read_csv(uploaded_file)
 
-    st.subheader("📋 入力された資産データ")
-    st.dataframe(df)
+        # データ表示
+        st.subheader("📄 アップロードされたデータ（プレビュー）")
+        st.dataframe(df)
 
-    total = df["残高"].sum()
-    st.metric("💵 自己資金総額", f"{total:,.0f} 万円")
+        # 必須カラムの確認
+        required_columns = {"口座名", "資産種別", "金額"}
+        if not required_columns.issubset(df.columns):
+            st.error("❌ データに必要な列（口座名、資産種別、金額）が含まれていません。")
+        else:
+            # 金額を数値に変換し、万円単位に
+            df["金額"] = pd.to_numeric(df["金額"], errors="coerce") / 10000
+            df.dropna(subset=["金額"], inplace=True)
 
-    # 機関別グラフ
-    st.subheader("🏦 金融機関ごとの残高")
-    fig, ax = plt.subplots()
-    ax.bar(df["機関"], df["残高"], color='skyblue')
-    ax.set_xlabel("金融機関")
-    ax.set_ylabel("金額（万円）")
-    ax.set_title("機関別残高")
-    plt.xticks(rotation=15)
-    st.pyplot(fig)
+            # 口座別合計
+            st.subheader("🏦 口座ごとの合計（万円）")
+            by_account = df.groupby("口座名")["金額"].sum()
+            st.bar_chart(by_account)
 
-    # 種別別円グラフ
-    st.subheader("📊 種別別の割合（銀行 / 証券など）")
-    by_type = df.groupby("種別")["残高"].sum()
-    fig2, ax2 = plt.subplots()
-    ax2.pie(by_type, labels=by_type.index, autopct="%1.1f%%", startangle=90)
-    ax2.set_title("種別別割合")
-    ax2.axis("equal")
-    st.pyplot(fig2)
+            # 資産種別ごとの合計（円グラフ）
+            st.subheader("📊 資産種別ごとの割合（万円）")
+            by_type = df.groupby("資産種別")["金額"].sum()
+            fig, ax = plt.subplots()
+            by_type.plot(kind="pie", autopct="%1.1f%%", ax=ax)
+            ax.set_ylabel("")
+            ax.set_title("資産種別割合（万円）")
+            st.pyplot(fig)
 
+            # 総資産（万円）表示
+            st.subheader("🧮 自己資金総額")
+            total = df["金額"].sum()
+            st.success(f"💴 合計: {total:,.1f} 万円")
+
+    except Exception as e:
+        st.error(f"❌ データの読み込み中にエラーが発生しました: {e}")
 else:
-    st.info("上記からCSVファイルをアップロードしてください。")
+    st.info("📂 CSVファイルをアップロードすると、自己資金の分析が表示されます。")
+
+# フッター
+st.caption("作成者: あなたの名前 | powered by Streamlit")
